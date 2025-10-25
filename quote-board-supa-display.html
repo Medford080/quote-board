@@ -253,6 +253,7 @@ el.singleQuoteInput.addEventListener('keydown', (e) => e.stopPropagation());
     const next = prompt('Edit quote: Use the format: Quote — Author (author optional)', `${q.text}${q.author?` — ${q.author}`:""}`);
     if(next===null) return; const parsed = parseLine(next.trim()); if(!parsed.text) return; state.quotes[i]=parsed; saveState(); updateStage();
   }
+
 function updateStage(){
   const q = state.quotes[state.index] || { text: "(no quotes)" };
 
@@ -279,19 +280,38 @@ function updateStage(){
   }
 }
 
-  function next(){ step(1); } function prev(){ step(-1); }
-  function step(delta){
-    if(state.quotes.length===0) return;
-    if(state.shuffle){ state.index = Math.floor(Math.random()*state.quotes.length); }
-    else{ state.index = (state.index + delta + state.quotes.length) % state.quotes.length; }
-    animateSwap(); saveState(); updateStage();
+// Navigation + playback helpers (unchanged)
+function next(){ step(1); }
+function prev(){ step(-1); }
+function step(delta){
+  if (state.quotes.length === 0) return;
+  if (state.shuffle){
+    state.index = Math.floor(Math.random() * state.quotes.length);
+  } else {
+    state.index = (state.index + delta + state.quotes.length) % state.quotes.length;
   }
-  let timer = null;
-  function play(){ if(state.quotes.length===0) return; if(timer) clearInterval(timer); state.playing = true; saveState();
-    timer = setInterval(next, Math.max(2, state.intervalSec)*1000); updateStage(); }
-  function pause(){ state.playing = false; saveState(); if(timer){ clearInterval(timer); timer=null; } updateStage(); }
-  function togglePlay(){ state.playing ? pause() : play(); }
-  function animateSwap(){
+  animateSwap();
+  saveState();
+  updateStage();
+}
+let timer = null;
+function play(){
+  if (state.quotes.length === 0) return;
+  if (timer) clearInterval(timer);
+  state.playing = true;
+  saveState();
+  timer = setInterval(next, Math.max(2, state.intervalSec) * 1000);
+  updateStage();
+}
+function pause(){
+  state.playing = false;
+  saveState();
+  if (timer){ clearInterval(timer); timer = null; }
+  updateStage();
+}
+function togglePlay(){ state.playing ? pause() : play(); }
+
+function animateSwap(){
   el.quoteBox.style.opacity = 0;
   el.quoteBox.style.transform = "translateY(8px)";
   setTimeout(()=>{
@@ -316,11 +336,13 @@ function updateStage(){
     el.quoteBox.style.transform = "translateY(0)";
   }, 150);
 }
+
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, m => (
     {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]
   ));
 }
+
                     
 // NEW: update image during swap
 const imgSrc = q.image || q.image_url || "";

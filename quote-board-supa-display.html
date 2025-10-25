@@ -1,6 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Quote Board (Supabase Display)</title>
+<meta name="description" content="A TV-friendly quote cycler pulling quotes from Supabase." />
+<style>
+  :root{ --bg:#0b0e11; --card:#11161c; --text:#e8eef7; --muted:#9fb0c5; --accent:#5aa9ff; --danger:#ff6b6b; --ok:#4ade80; }
+  :root.light{ --bg:#f5f7fb; --card:#ffffff; --text:#0b0e11; --muted:#53657a; --accent:#1f6feb; --danger:#dc2626; --ok:#16a34a; }
+  html, body {height:100%;}
+  body{ margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"; background: var(--bg); color: var(--text); }
+  .app{ display:grid; grid-template-rows:auto 1fr auto; min-height:100%; }
+  .topbar{ display:flex; gap:.5rem; align-items:center; justify-content:space-between; padding:.75rem 1rem; background:var(--card); position:sticky; top:0; z-index:10; border-bottom:1px solid rgba(255,255,255,.06); }
+  .left, .right{display:flex; gap:.5rem; align-items:center; flex-wrap:wrap}
+  .btn{ appearance:none; border:1px solid rgba(255,255,255,.12); background:transparent; color:var(--text); padding:.5rem .75rem; border-radius:.75rem; cursor:pointer; font-weight:600; }
+  .btn:hover{border-color:var(--accent)}
+  .btn.primary{background:var(--accent); border-color:transparent; color:white}
+  .btn.danger{border-color:transparent; background:var(--danger); color:white}
+  .btn.ok{background:var(--ok); border-color:transparent; color:black}
+  .btn.ghost{border-color:transparent; background:transparent; color:var(--muted)}
+  .panel{ padding:1rem; display:none; border-top:1px solid rgba(255,255,255,.06); background:var(--card) }
+  .panel.open{display:block}
+  .grid{display:grid; gap:.75rem}
+  .grid.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  @media(max-width:900px){ .grid.cols-2{grid-template-columns:1fr} }
+  label{font-size:.9rem; color:var(--muted)}
+  input[type="text"], textarea, input[type="number"], select{ width:100%; padding:.6rem .75rem; border-radius:.6rem; border:1px solid rgba(255,255,255,.15); background:transparent; color:var(--text); font-size:1rem; }
+  textarea{min-height:120px; resize:vertical}
+  .quote-stage{ display:flex; align-items:center; justify-content:center; text-align:center; padding:4vh 6vw; height:100%; }
+  .quote{ line-height:1.2; word-break:break-word; max-width: 1600px; margin:auto; transition: opacity .4s ease, transform .4s ease; }
+  .author{ opacity:.8; font-size:.6em; margin-top:.5em }
+  .controls{ display:flex; gap:.5rem; align-items:center; flex-wrap:wrap }
+  .footer{ padding:.5rem 1rem; color:var(--muted); font-size:.9rem; display:flex; gap:1rem; justify-content:space-between; align-items:center; border-top:1px solid rgba(255,255,255,.06); background:var(--card) }
+  .kbd{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size:.85em; padding:.15rem .35rem; border-radius:.4rem; border:1px solid rgba(255,255,255,.2)}
+  .list{display:flex; gap:.4rem; flex-wrap:wrap}
+  .pill{border:1px solid rgba(255,255,255,.2); padding:.25rem .5rem; border-radius:999px}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="left">
+      <strong>Quote Board</strong>
+      <span id="status" class="pill" title="Playback status">paused</span>
+    </div>
+    <div class="controls">
+      <button class="btn ok" id="playBtn" title="Play (Space)">▶ Play</button>
+      <button class="btn" id="prevBtn" title="Previous (←)">⟵ Prev</button>
+      <button class="btn" id="nextBtn" title="Next (→)">Next ⟶</button>
+      <button class="btn" id="fullscreenBtn" title="Fullscreen (F)">⛶ Fullscreen</button>
+      <button class="btn" id="settingsBtn" title="Settings (S)">⚙ Settings</button>
+      <button class="btn" id="manageBtn" title="Manage quotes (M)">✎ Manage</button>
+    </div>
+    <div class="right">
+      <button class="btn ghost" id="themeBtn" title="Toggle theme (T)">🌙</button>
+    </div>
+  </div>
+
+  <!-- Settings Panel -->
+  <div id="settingsPanel" class="panel">
+    <div class="grid cols-2">
+      <div><label>Advance every (seconds)</label><input type="number" id="intervalInput" min="2" step="1" /></div>
+      <div><label>Random order</label><select id="shuffleSelect"><option value="false">Off</option><option value="true">On</option></select></div>
+      <div><label>Font size (px)</label><input type="number" id="fontSizeInput" min="20" step="2" /></div>
+      <div><label>Text alignment</label><select id="alignSelect"><option value="center">Center</option><option value="left">Left</option><option value="right">Right</option></select></div>
+      <div><label>Page margins (vh)</label><input type="number" id="marginInput" min="0" step="1" /></div>
+      <div><label>Show author line</label><select id="showAuthorSelect"><option value="true">Yes</option><option value="false">No</option></select></div>
+    </div>
+  </div>
+
+  <!-- Manage Panel -->
+  <div id="managePanel" class="panel">
+    <div class="grid">
+      <div class="grid cols-2">
+        <div>
+          <label>Add a quote (optionally add " — Author")</label>
+          <input type="text" id="singleQuoteInput" placeholder='Example: "The obstacle is the way." — Marcus Aurelius' />
+        </div>
+        <div style="display:flex; align-items:flex-end; gap:.5rem">
+          <button class="btn primary" id="addQuoteBtn">Add Quote</button>
+          <button class="btn danger" id="clearAllBtn" title="Remove ALL quotes">Clear All</button>
+        </div>
+      </div>
+      <div>
+        <label>Bulk import (one per line; optional " — Author")</label>
+        <textarea id="bulkInput" placeholder="Quote one — Author
+Quote two
+Another quote — Unknown"></textarea>
+        <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-top:.5rem">
+          <button class="btn" id="importBtn">Import Lines</button>
+          <button class="btn" id="exportBtn">Export Current</button>
+        </div>
+      </div>
+      <div>
+        <label>Current quotes (<span id="countLabel">0</span>)</label>
+        <div id="quotesList"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stage -->
+  <div class="quote-stage" id="stage">
+    <div class="quote" id="quote" style="font-size:72px">
+      <div id="quoteText">Loading quotes…</div>
+      <div id="quoteAuthor" class="author"></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <div class="list">
+      <span>Shortcuts:</span>
+      <span class="kbd">Space</span> Play/Pause
+      <span class="kbd">←/→</span> Prev/Next
+      <span class="kbd">F</span> Fullscreen
+      <span class="kbd">S</span> Settings
+      <span class="kbd">M</span> Manage
+      <span class="kbd">T</span> Theme
+    </div>
+    <div class="list"><span id="clock"></span></div>
+  </div>
+</div>
+
+<!-- MAIN APP (unchanged from your working page) -->
+<script>
+(function(){
+  const $ = s => document.querySelector(s);
+  const LS_KEY = "quote_board_v1";
+  const el = {
+    status: $('#status'), playBtn: $('#playBtn'), prevBtn: $('#prevBtn'), nextBtn: $('#nextBtn'),
+    fullscreenBtn: $('#fullscreenBtn'), settingsBtn: $('#settingsBtn'), manageBtn: $('#manageBtn'),
+    settingsPanel: $('#settingsPanel'), managePanel: $('#managePanel'),
+    intervalInput: $('#intervalInput'), shuffleSelect: $('#shuffleSelect'),
+    fontSizeInput: $('#fontSizeInput'), alignSelect: $('#alignSelect'),
+    marginInput: $('#marginInput'), showAuthorSelect: $('#showAuthorSelect'),
+    singleQuoteInput: $('#singleQuoteInput'), addQuoteBtn: $('#addQuoteBtn'),
+    bulkInput: $('#bulkInput'), importBtn: $('#importBtn'), exportBtn: $('#exportBtn'),
+    clearAllBtn: $('#clearAllBtn'), quotesList: $('#quotesList'), countLabel: $('#countLabel'),
+    stage: $('#stage'), quoteBox: $('#quote'), quoteText: $('#quoteText'), quoteAuthor: $('#quoteAuthor'),
+    themeBtn: $('#themeBtn'), clock: $('#clock'),
+  };
+
+  const defaultState = {
+    quotes: [
+      {text:"The obstacle is the way.", author:"Marcus Aurelius"},
+      {text:"We are what we repeatedly do. Excellence, then, is not an act, but a habit.", author:"Will Durant"},
+      {text:"What you do every day matters more than what you do once in a while.", author:"Gretchen Rubin"}
+    ],
+    index: 0, playing: true, shuffle: true, intervalSec: 12,
+    fontSize: 150, align: "center", marginVh: 6, showAuthor: true, theme: "dark"
+  };
+
+  let state = loadState();
+  function saveState(){ localStorage.setItem(LS_KEY, JSON.stringify(state)); renderList(); }
+  function loadState(){
+    try{ const raw = localStorage.getItem(LS_KEY); if(!raw) return {...defaultState};
+      const data = JSON.parse(raw);
+      return {...defaultState, ...data, quotes: Array.isArray(data.quotes)&&data.quotes.length?data.quotes:defaultState.quotes};
+    }catch(e){ return {...defaultState}; }
+  }
+  function parseLine(line){
+    const m = line.split(/\s+[-–—]\s+/);
+    if(m.length>=2){ const author = m.slice(1).join(' - '); return {text:m[0].replace(/^["“”']|["“”']$/g,''), author:author.trim()}; }
+    return {text:line.replace(/^["“”']|["“”']$/g,''), author:""};
+  }
+  function renderList(){
+    el.countLabel.textContent = state.quotes.length; el.quotesList.innerHTML = "";
+    state.quotes.forEach((q,i)=>{
+      const row = document.createElement('div'); row.style.display='grid'; row.style.gridTemplateColumns='1fr auto'; row.style.gap='.5rem'; row.style.alignItems='center'; row.style.padding='.35rem 0';
+      const text = document.createElement('div'); text.innerHTML = `<div>${escapeHtml(q.text)} ${q.author?`<span style="color:var(--muted)">— ${escapeHtml(q.author)}</span>`:""}</div>`;
+      const actions = document.createElement('div'); const edit = document.createElement('button'); edit.className='btn'; edit.textContent='Edit'; edit.onclick=()=>editQuote(i);
+      const del = document.createElement('button'); del.className='btn danger'; del.textContent='Delete';
+      del.onclick=()=>{ state.quotes.splice(i,1); state.index=Math.min(state.index, Math.max(0, state.quotes.length-1)); saveState(); updateStage(); };
+      actions.appendChild(edit); actions.appendChild(del); row.appendChild(text); row.appendChild(actions); el.quotesList.appendChild(row);
+    });
+  }
+  function editQuote(i){
+    const q = state.quotes[i];
+    const next = prompt('Edit quote: Use the format: Quote — Author (author optional)', `${q.text}${q.author?` — ${q.author}`:""}`);
+    if(next===null) return; const parsed = parseLine(next.trim()); if(!parsed.text) return; state.quotes[i]=parsed; saveState(); updateStage();
+  }
+  function updateStage(){
+    const q = state.quotes[state.index] || {text:"(no quotes)"};
+    el.quoteText.textContent = q.text || "(no quotes)";
+    el.quoteAuthor.textContent = (state.showAuthor && q.author) ? `— ${q.author}` : "";
+    el.quoteBox.style.fontSize = state.fontSize + "px"; el.quoteBox.style.textAlign = state.align;
+    el.stage.style.padding = state.marginVh + "vh 6vw"; document.documentElement.className = state.theme === "light" ? "light" : "";
+    el.themeBtn.textContent = state.theme === "light" ? "🌞" : "🌙"; el.status.textContent = state.playing ? "playing" : "paused";
+  }
+  function next(){ step(1); } function prev(){ step(-1); }
+  function step(delta){
+    if(state.quotes.length===0) return;
+    if(state.shuffle){ state.index = Math.floor(Math.random()*state.quotes.length); }
+    else{ state.index = (state.index + delta + state.quotes.length) % state.quotes.length; }
+    animateSwap(); saveState(); updateStage();
+  }
+  let timer = null;
+  function play(){ if(state.quotes.length===0) return; if(timer) clearInterval(timer); state.playing = true; saveState();
+    timer = setInterval(next, Math.max(2, state.intervalSec)*1000); updateStage(); }
+  function pause(){ state.playing = false; saveState(); if(timer){ clearInterval(timer); timer=null; } updateStage(); }
+  function togglePlay(){ state.playing ? pause() : play(); }
+  function animateSwap(){
+    el.quoteBox.style.opacity = 0; el.quoteBox.style.transform = "translateY(8px)";
+    setTimeout(()=>{ const q = state.quotes[state.index] || {text:"(no quotes)"};
+      el.quoteText.textContent = q.text || "(no quotes)"; el.quoteAuthor.textContent = (state.showAuthor && q.author) ? `— ${q.author}` : "";
+      el.quoteBox.style.opacity = 1; el.quoteBox.style.transform = "translateY(0)"; }, 150);
+  }
+  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+
+  // Controls
+  el.playBtn.onclick = togglePlay; el.prevBtn.onclick = prev; el.nextBtn.onclick = next;
+  el.fullscreenBtn.onclick = ()=>{ const root = document.documentElement; if(!document.fullscreenElement){ root.requestFullscreen?.(); } else { document.exitFullscreen?.(); } };
+  el.settingsBtn.onclick = ()=>{ el.settingsPanel.classList.toggle('open'); };
+  el.manageBtn.onclick = ()=>{ el.managePanel.classList.toggle('open'); };
+  el.themeBtn.onclick = ()=>{ state.theme = state.theme === "light" ? "dark" : "light"; saveState(); updateStage(); };
+
+  el.intervalInput.value = state.intervalSec; el.intervalInput.oninput = e=>{ state.intervalSec = Number(e.target.value||12); saveState(); if(state.playing){ play(); } };
+  el.shuffleSelect.value = String(state.shuffle); el.shuffleSelect.onchange = e=>{ state.shuffle = (e.target.value==="true"); saveState(); };
+  el.fontSizeInput.value = state.fontSize; el.fontSizeInput.oninput = e=>{ state.fontSize = Number(e.target.value||72); saveState(); updateStage(); };
+  el.alignSelect.value = state.align; el.alignSelect.onchange = e=>{ state.align = e.target.value; saveState(); updateStage(); };
+  el.marginInput.value = state.marginVh; el.marginInput.oninput = e=>{ state.marginVh = Number(e.target.value||6); saveState(); updateStage(); };
+  el.showAuthorSelect.value = String(state.showAuthor); el.showAuthorSelect.onchange = e=>{ state.showAuthor = (e.target.value==="true"); saveState(); updateStage(); };
+
+  el.addQuoteBtn.onclick = ()=>{ const line = el.singleQuoteInput.value.trim(); if(!line) return; const q = parseLine(line); state.quotes.push(q); el.singleQuoteInput.value = ""; saveState(); updateStage(); };
+  el.clearAllBtn.onclick = ()=>{ if(confirm("Remove ALL quotes? This cannot be undone.")){ state.quotes = []; state.index = 0; saveState(); updateStage(); } };
+  el.importBtn.onclick = ()=>{ const lines = el.bulkInput.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean); if(!lines.length) return;
+    const qs = lines.map(parseLine); state.quotes.push(...qs); el.bulkInput.value = ""; saveState(); updateStage(); };
+  el.exportBtn.onclick = ()=>{ const text = state.quotes.map(q => q.author ? `${q.text} — ${q.author}` : q.text).join("\n");
+    const blob = new Blob([text], {type:"text/plain"}); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "quotes.txt"; a.click(); URL.revokeObjectURL(url); };
+
+  window.addEventListener('keydown', (e)=>{ if(e.key===' '){ e.preventDefault(); togglePlay(); }
+    if(e.key==='ArrowRight'){ next(); } if(e.key==='ArrowLeft'){ prev(); }
+    if(e.key.toLowerCase()==='f'){ el.fullscreenBtn.click(); } if(e.key.toLowerCase()==='s'){ el.settingsBtn.click(); }
+    if(e.key.toLowerCase()==='m'){ el.manageBtn.click(); } if(e.key.toLowerCase()==='t'){ el.themeBtn.click(); } });
+
+  function tickClock(){ const d=new Date(); const hh=d.getHours().toString().padStart(2,'0'); const mm=d.getMinutes().toString().padStart(2,'0'); el.clock.textContent = hh+":"+mm; }
+  setInterval(tickClock, 10000); tickClock();
+
+  updateStage(); renderList(); if(state.playing) play();
+})();
+</script>
+
+<!-- EXPOSE app APIs for the Supabase module -->
+<script>
+  window.state = window.state || state;
+  window.saveState = window.saveState || saveState;
+  window.updateStage = window.updateStage || updateStage;
+  window.renderList = window.renderList || renderList;
+</script>
+
+<!-- SUPABASE LOADER (reads quotes; realtime updates) -->
 <script type="module">
   import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+  // 🔧 Paste YOUR project details
   const SUPABASE_URL = "https://ojwukbzdmvnkapfsvilt.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9qd3VrYnpkbXZua2FwZnN2aWx0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEzNjAwNDUsImV4cCI6MjA3NjkzNjA0NX0.LAOfKFxBoySyRIZRl0aGqslMvatlVkou3fwCN1oefKA";
 
@@ -19,7 +271,7 @@
       image: q.image_url || ""
     })).filter(q => q.text);
 
-    // 🔴 If your main code hasn't exposed these, the next lines won't work.
+    // Replace current quotes and refresh UI
     window.state.quotes = arr.length ? arr : window.state.quotes;
     window.state.index  = Math.min(window.state.index, Math.max(0, window.state.quotes.length - 1));
     window.saveState(); window.updateStage(); window.renderList();
@@ -32,9 +284,10 @@
       .subscribe();
   }
 
-  // Wait until the page & your main script have initialized
   window.addEventListener('load', async () => {
     await loadQuotesOnce();
     subscribeRealtime();
   });
 </script>
+</body>
+</html>

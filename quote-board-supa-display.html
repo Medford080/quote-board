@@ -243,8 +243,26 @@ el.singleQuoteInput.addEventListener('keydown', (e) => e.stopPropagation());
       const row = document.createElement('div'); row.style.display='grid'; row.style.gridTemplateColumns='1fr auto'; row.style.gap='.5rem'; row.style.alignItems='center'; row.style.padding='.35rem 0';
       const text = document.createElement('div'); text.innerHTML = `<div>${escapeHtml(q.text)} ${q.author?`<span style="color:var(--muted)">— ${escapeHtml(q.author)}</span>`:""}</div>`;
       const actions = document.createElement('div'); const edit = document.createElement('button'); edit.className='btn'; edit.textContent='Edit'; edit.onclick=()=>editQuote(i);
-      const del = document.createElement('button'); del.className='btn danger'; del.textContent='Delete';
-      del.onclick=()=>{ state.quotes.splice(i,1); state.index=Math.min(state.index, Math.max(0, state.quotes.length-1)); saveState(); updateStage(); };
+      const del = document.createElement('button');
+    del.className = 'btn danger';
+    del.textContent = 'Delete';
+    del.onclick = async () => {
+      const row = state.quotes[i];
+      // If this row has an id, delete from cloud; otherwise fall back to local
+      if (row?.id && window.supabase) {
+        const { data: { user } } = await window.supabase.auth.getUser();
+        if (!user) { alert("Please sign in first (top-right)."); return; }
+        const { error } = await window.supabase.from('quotes').delete().eq('id', row.id);
+        if (error) { alert("Delete failed: " + error.message); return; }
+        await window.loadQuotesOnce?.();
+      } else {
+        // fallback: local-only (legacy rows missing id)
+        state.quotes.splice(i, 1);
+        state.index = Math.min(state.index, Math.max(0, state.quotes.length - 1));
+        saveState(); updateStage();
+      }
+    };
+
       actions.appendChild(edit); actions.appendChild(del); row.appendChild(text); row.appendChild(actions); el.quotesList.appendChild(row);
     });
   }
@@ -360,9 +378,46 @@ function escapeHtml(s){
   el.showAuthorSelect.value = String(state.showAuthor); el.showAuthorSelect.onchange = e=>{ state.showAuthor = (e.target.value==="true"); saveState(); updateStage(); };
 
  el.addQuoteBtn.onclick = () => {};
-  el.clearAllBtn.onclick = ()=>{ if(confirm("Remove ALL quotes? This cannot be undone.")){ state.quotes = []; state.index = 0; saveState(); updateStage(); } };
-  el.importBtn.onclick = ()=>{ const lines = el.bulkInput.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean); if(!lines.length) return;
-    const qs = lines.map(parseLine); state.quotes.push(...qs); el.bulkInput.value = ""; saveState(); updateStage(); };
+  el.clearAllBtn.onclick = async () => {
+  if (!confirm("Remove ALL quotes from the cloud DB? This cannot be undone.")) return;
+
+  if (!window.supabase) { alert("Cloud not ready yet. Refresh and try again."); return; }
+
+  // require auth
+  const { data: { user } } = await window.supabase.auth.getUser();
+  if (!user) { alert("Please sign in first (top-right)."); return; }
+
+  // delete all rows (using a safe predicate)
+  const { error } = await window.supabase.from('quotes')
+    .delete()
+    .neq('id', '00000000-0000-0000-0000-000000000000');
+  if (error) { alert("Delete failed: " + error.message); return; }
+
+  await window.loadQuotesOnce?.();
+  alert("All quotes removed from the cloud.");
+};
+
+  el.importBtn.onclick = async () => {
+  const lines = el.bulkInput.value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  if (!lines.length) return;
+
+  if (!window.supabase) { alert("Cloud not ready yet. Refresh and try again."); return; }
+  const { data: { user } } = await window.supabase.auth.getUser();
+  if (!user) { alert("Please sign in first (top-right)."); return; }
+
+  const rows = lines
+    .map(parseLine)
+    .filter(q => q.text)
+    .map(q => ({ text: q.text, author: q.author || null, image_url: null }));
+
+  const { error } = await window.supabase.from('quotes').insert(rows);
+  if (error) { alert("Import failed: " + error.message); return; }
+
+  el.bulkInput.value = "";
+  await window.loadQuotesOnce?.();
+  alert(`Imported ${rows.length} quotes to the cloud.`);
+};
+
   el.exportBtn.onclick = ()=>{ const text = state.quotes.map(q => q.author ? `${q.text} — ${q.author}` : q.text).join("\n");
     const blob = new Blob([text], {type:"text/plain"}); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "quotes.txt"; a.click(); URL.revokeObjectURL(url); };
 
@@ -459,30 +514,25 @@ window.addEventListener('keydown', (e) => {
     console.log("[LOAD] Fetching quotes...");
     const { data, error } = await supabase
       .from("quotes")
-      .select("text, author, image_url")
-      .order("created_at", { ascending: true });
+      .select("id, text, author, image_url")
+  .order("created_at", { ascending: true });
+…
+const arr = (data || []).map(q => ({
+  id: q.id,
+  text: q.text || "",
+  author: q.author || "",
+  image: q.image_url || ""
+}));
 
-    if (error) {
-      console.warn("[LOAD] Supabase error:", error);
-      return;
-    }
+console.log("[LOAD] Loaded", arr.length, "quotes");
 
-    // Map DB rows → local app shape (image_url → image)
-    const arr = (data || []).map(q => ({
-      text: q.text || "",
-      author: q.author || "",
-      image: q.image_url || ""
-    })).filter(q => q.text);
+// ✅ Always replace local with cloud (even if empty)
+window.state.quotes = arr;
+window.state.index = Math.min(window.state.index, Math.max(0, arr.length - 1));
 
-    console.log("[LOAD] Loaded", arr.length, "quotes");
-
-    if (arr.length) {
-      window.state.quotes = arr;
-      window.state.index = Math.min(window.state.index, Math.max(0, arr.length - 1));
-    }
-    window.saveState?.(); 
-    window.updateStage?.(); 
-    window.renderList?.();
+window.saveState?.();
+window.updateStage?.();
+window.renderList?.();
   }
 
   // ===== Realtime =====
@@ -542,21 +592,28 @@ window.addEventListener('keydown', (e) => {
 
       // Insert row (with or without image)
       const payload = { text, author: author || null, image_url: publicUrl || null };
-      const { error: insErr } = await supabase.from('quotes').insert(payload);
+      const { data: inserted, error: insErr } = await supabase
+        .from('quotes')
+        .insert(payload)
+        .select('id');   // ✅ return id for future edits/deletes
       if (insErr) { console.error("[ADD] Insert failed:", insErr); alert(`Save failed: ${insErr.message}`); return; }
-
-      // Optimistic UI update
+      
+      const id = inserted?.[0]?.id || null;
+      
+      // Optimistic UI update with id
       window.state.quotes.push({
+        id,
         text,
         author: author || "",
-        image: publicUrl || ""   // UI uses q.image
+        image: publicUrl || ""
       });
       window.saveState?.();
       window.updateStage?.();
       window.renderList?.();
-
-      // Re-sync from Supabase so local state = DB
+      
+      // Re-sync from Supabase …
       try { await loadQuotesOnce?.(); } catch (e) { console.warn("[ADD] loadQuotesOnce unavailable:", e); }
+
 
       // Clear form
       textInput.value = "";
@@ -577,6 +634,10 @@ window.addEventListener('keydown', (e) => {
     await loadQuotesOnce();
     subscribeRealtime();
   });
+  // expose to main script handlers (clear/import/delete)
+window.supabase = supabase;
+window.loadQuotesOnce = loadQuotesOnce;
+
 </script>
 
 

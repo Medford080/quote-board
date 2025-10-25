@@ -673,6 +673,11 @@ if (window.state && window.updateStage) {
   }, 100);
   setTimeout(() => clearInterval(iv), 5000); // stop polling after 5s
 }
+window.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible" && window.loadQuotesOnce) {
+    window.loadQuotesOnce();
+  }
+});
 
   // expose to main script handlers (clear/import/delete)
 window.supabase = supabase;

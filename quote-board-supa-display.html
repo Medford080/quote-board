@@ -1,14 +1,11 @@
 <script type="module">
   import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-  // 1) CONFIG: paste your values
   const SUPABASE_URL = "https://ojwukbzdmvnkapfsvilt.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9qd3VrYnpkbXZua2FwZnN2aWx0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEzNjAwNDUsImV4cCI6MjA3NjkzNjA0NX0.LAOfKFxBoySyRIZRl0aGqslMvatlVkou3fwCN1oefKA";
 
-  // 2) Create client
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  // 3) Fetch + map quotes into your app's state
   async function loadQuotesOnce() {
     const { data, error } = await supabase
       .from("quotes")
@@ -16,31 +13,27 @@
       .order("created_at", { ascending: true });
     if (error) { console.warn(error); return; }
 
-    // Map to your app’s expected shape:
     const arr = (data || []).map(q => ({
       text: q.text || "",
       author: q.author || "",
-      image: q.image_url || ""     // <-- your image field
+      image: q.image_url || ""
     })).filter(q => q.text);
 
-    // Replace local quotes with remote:
-    state.quotes = arr.length ? arr : state.quotes;
-    state.index = Math.min(state.index, Math.max(0, state.quotes.length - 1));
-    saveState(); updateStage(); renderList();
+    // 🔴 If your main code hasn't exposed these, the next lines won't work.
+    window.state.quotes = arr.length ? arr : window.state.quotes;
+    window.state.index  = Math.min(window.state.index, Math.max(0, window.state.quotes.length - 1));
+    window.saveState(); window.updateStage(); window.renderList();
   }
 
-  // 4) Realtime updates (instant sync)
   function subscribeRealtime() {
     supabase
       .channel('quotes-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'quotes' }, async () => {
-        await loadQuotesOnce();
-      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quotes' }, loadQuotesOnce)
       .subscribe();
   }
 
-  // 5) Call these AFTER your app initializes state/UI:
-  window.addEventListener('DOMContentLoaded', async () => {
+  // Wait until the page & your main script have initialized
+  window.addEventListener('load', async () => {
     await loadQuotesOnce();
     subscribeRealtime();
   });

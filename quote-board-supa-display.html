@@ -53,8 +53,10 @@
       <button class="btn" id="manageBtn" title="Manage quotes (M)">✎ Manage</button>
     </div>
     <div class="right">
-      <button class="btn ghost" id="themeBtn" title="Toggle theme (T)">🌙</button>
-    </div>
+  <button class="btn" id="authBtn" title="Sign in/out">Sign In</button>
+  <button class="btn ghost" id="themeBtn" title="Toggle theme (T)">🌙</button>
+</div>
+
   </div>
 
   <!-- Settings Panel -->
@@ -70,18 +72,29 @@
   </div>
 
   <!-- Manage Panel -->
-  <div id="managePanel" class="panel">
-    <div class="grid">
-      <div class="grid cols-2">
-        <div>
-          <label>Add a quote (optionally add " — Author")</label>
-          <input type="text" id="singleQuoteInput" placeholder='Example: "The obstacle is the way." — Marcus Aurelius' />
-        </div>
-        <div style="display:flex; align-items:flex-end; gap:.5rem">
-          <button class="btn primary" id="addQuoteBtn">Add Quote</button>
-          <button class="btn danger" id="clearAllBtn" title="Remove ALL quotes">Clear All</button>
+ <div id="managePanel" class="panel">
+  <div class="grid">
+    <div class="grid cols-2">
+      <div>
+        <label>Add a quote (optionally add " — Author")</label>
+        <input
+          type="text"
+          id="singleQuoteInput"
+          placeholder='Example: "The obstacle is the way." — Marcus Aurelius'
+        />
+
+        <!-- NEW: image picker for the quote -->
+        <div style="margin-top:.5rem">
+          <input type="file" id="singleImageInput" accept="image/*" />
         </div>
       </div>
+
+      <div style="display:flex; align-items:flex-end; gap:.5rem">
+        <button class="btn primary" id="addQuoteBtn">Add Quote</button>
+        <button class="btn danger" id="clearAllBtn" title="Remove ALL quotes">Clear All</button>
+      </div>
+    </div>
+    <!-- (keep the rest of your Manage panel below as-is) -->
       <div>
         <label>Bulk import (one per line; optional " — Author")</label>
         <textarea id="bulkInput" placeholder="Quote one — Author
@@ -126,19 +139,41 @@ Another quote — Unknown"></textarea>
 (function(){
   const $ = s => document.querySelector(s);
   const LS_KEY = "quote_board_v1";
-  const el = {
-    status: $('#status'), playBtn: $('#playBtn'), prevBtn: $('#prevBtn'), nextBtn: $('#nextBtn'),
-    fullscreenBtn: $('#fullscreenBtn'), settingsBtn: $('#settingsBtn'), manageBtn: $('#manageBtn'),
-    settingsPanel: $('#settingsPanel'), managePanel: $('#managePanel'),
-    intervalInput: $('#intervalInput'), shuffleSelect: $('#shuffleSelect'),
-    fontSizeInput: $('#fontSizeInput'), alignSelect: $('#alignSelect'),
-    marginInput: $('#marginInput'), showAuthorSelect: $('#showAuthorSelect'),
-    singleQuoteInput: $('#singleQuoteInput'), addQuoteBtn: $('#addQuoteBtn'),
-    bulkInput: $('#bulkInput'), importBtn: $('#importBtn'), exportBtn: $('#exportBtn'),
-    clearAllBtn: $('#clearAllBtn'), quotesList: $('#quotesList'), countLabel: $('#countLabel'),
-    stage: $('#stage'), quoteBox: $('#quote'), quoteText: $('#quoteText'), quoteAuthor: $('#quoteAuthor'),
-    themeBtn: $('#themeBtn'), clock: $('#clock'),
-  };
+const el = {
+  status: $('#status'),
+  playBtn: $('#playBtn'),
+  prevBtn: $('#prevBtn'),
+  nextBtn: $('#nextBtn'),
+  fullscreenBtn: $('#fullscreenBtn'),
+  settingsBtn: $('#settingsBtn'),
+  manageBtn: $('#manageBtn'),
+  settingsPanel: $('#settingsPanel'),
+  managePanel: $('#managePanel'),
+  intervalInput: $('#intervalInput'),
+  shuffleSelect: $('#shuffleSelect'),
+  fontSizeInput: $('#fontSizeInput'),
+  alignSelect: $('#alignSelect'),
+  marginInput: $('#marginInput'),
+  showAuthorSelect: $('#showAuthorSelect'),
+  singleQuoteInput: $('#singleQuoteInput'),
+  // ✅ NEW — image input for “Add a quote”
+  singleImageInput: $('#singleImageInput'),
+  addQuoteBtn: $('#addQuoteBtn'),
+  bulkInput: $('#bulkInput'),
+  importBtn: $('#importBtn'),
+  exportBtn: $('#exportBtn'),
+  clearAllBtn: $('#clearAllBtn'),
+  quotesList: $('#quotesList'),
+  countLabel: $('#countLabel'),
+  stage: $('#stage'),
+  quoteBox: $('#quote'),
+  quoteText: $('#quoteText'),
+  quoteAuthor: $('#quoteAuthor'),
+  // ✅ NEW — Sign In/Out button in the top-right
+  authBtn: $('#authBtn'),
+  themeBtn: $('#themeBtn'),
+  clock: $('#clock'),
+};
 
   const defaultState = {
     quotes: [
@@ -277,9 +312,38 @@ Another quote — Unknown"></textarea>
 
   const SUPABASE_URL = "https://ojwukbzdmvnkapfsvilt.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9qd3VrYnpkbXZua2FwZnN2aWx0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEzNjAwNDUsImV4cCI6MjA3NjkzNjA0NX0.LAOfKFxBoySyRIZRl0aGqslMvatlVkou3fwCN1oefKA";
+  const BUCKET = "quote-images";
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+  // ===== Auth UI =====
+  const authBtn = document.getElementById('authBtn');
+
+  async function updateAuthButton() {
+    const { data: { user } } = await supabase.auth.getUser();
+    authBtn.textContent = user ? "Sign Out" : "Sign In";
+    authBtn.title = user ? `Signed in as ${user.email}` : "Sign in";
+  }
+
+  authBtn?.addEventListener('click', async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      await supabase.auth.signOut();
+      await updateAuthButton();
+      alert("Signed out.");
+    } else {
+      const email = prompt("Email:");
+      if (!email) return;
+      const password = prompt("Password:");
+      if (!password) return;
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) { alert(error.message); return; }
+      await updateAuthButton();
+      alert("Signed in!");
+    }
+  });
+
+  // ===== Data loading =====
   async function loadQuotesOnce() {
     const { data, error } = await supabase
       .from("quotes")
@@ -297,12 +361,9 @@ Another quote — Unknown"></textarea>
       image: q.image_url || ""
     })).filter(q => q.text);
 
-    // ✅ Now works because we exposed these in Step 1
     window.state.quotes = arr.length ? arr : window.state.quotes;
-    window.state.index = Math.min(window.state.index, Math.max(0, window.state.quotes.length - 1));
-    window.saveState();
-    window.updateStage();
-    window.renderList();
+    window.state.index  = Math.min(window.state.index, Math.max(0, window.state.quotes.length - 1));
+    window.saveState(); window.updateStage(); window.renderList();
   }
 
   function subscribeRealtime() {
@@ -312,8 +373,54 @@ Another quote — Unknown"></textarea>
       .subscribe();
   }
 
-  // ✅ Wait until the main app fires its "ready" event
+  // ===== Add Quote with optional image upload =====
+  const addBtn = document.getElementById('addQuoteBtn');
+  const textInput = document.getElementById('singleQuoteInput');
+  const imgInput  = document.getElementById('singleImageInput');
+
+  addBtn?.addEventListener('click', async () => {
+    const line = (textInput.value || "").trim();
+    if (!line) return;
+
+    // Require auth for writing per your RLS policies
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      alert("Please sign in first (top-right) to add quotes/images.");
+      return;
+    }
+
+    // Parse: "Quote — Author" (author optional)
+    const m = line.split(/\s+[-–—]\s+/);
+    const text = (m[0] || "").replace(/^["“”']|["“”']$/g,'').trim();
+    const author = (m.length >= 2 ? m.slice(1).join(' - ') : "").trim();
+
+    let publicUrl = "";
+
+    // Upload image if provided
+    if (imgInput?.files && imgInput.files[0]) {
+      const file = imgInput.files[0];
+      const path = `${crypto.randomUUID()}-${file.name}`;
+      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
+      if (upErr) { alert(`Upload failed: ${upErr.message}`); return; }
+      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+      publicUrl = data.publicUrl;
+    }
+
+    // Insert quote row
+    const { error: insErr } = await supabase.from('quotes').insert({
+      text, author: author || null, image_url: publicUrl || null
+    });
+    if (insErr) { alert(`Save failed: ${insErr.message}`); return; }
+
+    // Clear form (realtime will refresh displays)
+    textInput.value = "";
+    if (imgInput) imgInput.value = "";
+    alert("Quote added!");
+  });
+
+  // ===== Boot =====
   window.addEventListener("quoteAppReady", async () => {
+    await updateAuthButton();
     await loadQuotesOnce();
     subscribeRealtime();
   });

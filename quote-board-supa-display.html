@@ -343,17 +343,6 @@ function escapeHtml(s){
   ));
 }
 
-                    
-// NEW: update image during swap
-const imgSrc = q.image || q.image_url || "";
-if (imgSrc) {
-  el.quoteImage.src = imgSrc;
-  el.quoteImageWrap.style.display = "";
-} else {
-  el.quoteImage.src = "";
-  el.quoteImageWrap.style.display = "none";
-}
-
   function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
 
   // Controls

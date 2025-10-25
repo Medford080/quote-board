@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Quotes Admin</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; }
+    label { display:block; margin-top: 1rem; font-weight:600 }
+    input[type="text"], input[type="email"], input[type="password"], textarea { width:100%; padding:.6rem; }
+    button { margin-top:1rem; padding:.5rem .8rem; }
+    img { max-width: 200px; display:block; margin-top:.5rem; }
+    .row{border:1px solid #ddd; padding: .75rem; margin:.5rem 0; border-radius:.5rem;}
+  </style>
+</head>
+<body>
+  <h1>Quotes Admin</h1>
+
+  <section id="auth">
+    <label>Email</label><input id="email" type="email" />
+    <label>Password</label><input id="password" type="password" />
+    <button id="signin">Sign In</button>
+    <div id="authStatus"></div>
+    <hr/>
+  </section>
+
+  <section id="form" style="display:none">
+    <h2>Add a Quote</h2>
+    <label>Quote text</label><textarea id="text"></textarea>
+    <label>Author (optional)</label><input id="author" type="text" />
+    <label>Image (optional)</label><input id="image" type="file" accept="image/*" />
+    <img id="preview" />
+    <button id="add">Add Quote</button>
+    <div id="msg"></div>
+    <hr/>
+    <h3>Recent Quotes</h3>
+    <div id="list"></div>
+  </section>
+
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+    // CONFIG
+    const SUPABASE_URL = https://ojwukbzdmvnkapfsvilt.supabase.co;
+    const SUPABASE_ANON_KEY = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9qd3VrYnpkbXZua2FwZnN2aWx0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEzNjAwNDUsImV4cCI6MjA3NjkzNjA0NX0.LAOfKFxBoySyRIZRl0aGqslMvatlVkou3fwCN1oefKA;
+    const BUCKET = "quote-images";
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const el = (id) => document.getElementById(id);
+    const email = el('email'), password = el('password');
+    const signin = el('signin');
+    const formSec = el('form'), authSec = el('auth');
+    const text = el('text'), author = el('author'), image = el('image');
+    const addBtn = el('add'), msg = el('msg'), list = el('list'), preview = el('preview');
+
+    // Sign in (email/password user you created)
+    signin.onclick = async () => {
+      const { error } = await supabase.auth.signInWithPassword({
+        email: email.value.trim(), password: password.value
+      });
+      el('authStatus').textContent = error ? error.message : "Signed in";
+      if (!error) { authSec.style.display = 'none'; formSec.style.display = 'block'; loadList(); }
+    };
+
+    // Preview
+    image.onchange = () => {
+      const file = image.files?.[0];
+      preview.src = file ? URL.createObjectURL(file) : "";
+    };
+
+    // Add quote
+    addBtn.onclick = async () => {
+      msg.textContent = "";
+      let publicUrl = "";
+
+      // 1) Upload image if provided
+      if (image.files && image.files[0]) {
+        const file = image.files[0];
+        const path = `${crypto.randomUUID()}-${file.name}`;
+        const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
+        if (upErr) { msg.textContent = upErr.message; return; }
+        // get public URL
+        const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+        publicUrl = data.publicUrl;
+      }
+
+      // 2) Insert row
+      const { error: insErr } = await supabase.from('quotes').insert({
+        text: text.value.trim(),
+        author: author.value.trim() || null,
+        image_url: publicUrl || null
+      });
+      if (insErr) { msg.textContent = insErr.message; return; }
+
+      // Reset + refresh
+      text.value = ""; author.value = ""; image.value = ""; preview.src = "";
+      msg.textContent = "Added!";
+      loadList();
+    };
+
+    async function loadList() {
+      const { data } = await supabase
+        .from('quotes')
+        .select('id,text,author,image_url,created_at')
+        .order('created_at', { ascending: false })
+        .limit(10);
+      list.innerHTML = (data||[]).map(q => `
+        <div class="row">
+          <div><strong>${escapeHtml(q.text)}</strong> ${q.author ? '— ' + escapeHtml(q.author) : ''}</div>
+          ${q.image_url ? `<img src="${q.image_url}" alt="" />` : ''}
+          <small>${new Date(q.created_at).toLocaleString()}</small>
+        </div>
+      `).join('');
+    }
+
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
+  </script>
+</body>
+</html>

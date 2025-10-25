@@ -640,13 +640,40 @@ addBtn?.addEventListener('click', async () => {
   }
 });
 
-  // ===== Boot after the main app exposes window.state/etc. =====
-  // (Your main app dispatches: window.dispatchEvent(new Event('quoteAppReady')); )
-  window.addEventListener("quoteAppReady", async () => {
+// ===== Robust boot: run whether we catch the event or not =====
+async function boot() {
+  try {
     await updateAuthButton();
-    await loadQuotesOnce();
-    subscribeRealtime();
-  });
+    await loadQuotesOnce();      // pulls cloud data and replaces local
+    subscribeRealtime();         // keeps all clients in sync
+  } catch (e) {
+    console.warn("[BOOT] error:", e);
+  }
+}
+
+// If the main app is already ready (event was missed), run now;
+// otherwise, wait for the event — and add a couple of fallbacks.
+if (window.state && window.updateStage) {
+  boot();
+} else {
+  // Primary: wait for the custom event (when main app finishes)
+  window.addEventListener("quoteAppReady", boot, { once: true });
+
+  // Fallback 1: if DOM is ready and main app is already attached, run
+  window.addEventListener("DOMContentLoaded", () => {
+    if (window.state && window.updateStage) boot();
+  }, { once: true });
+
+  // Fallback 2: short-lived poll in case both happen out of order
+  const iv = setInterval(() => {
+    if (window.state && window.updateStage) {
+      clearInterval(iv);
+      boot();
+    }
+  }, 100);
+  setTimeout(() => clearInterval(iv), 5000); // stop polling after 5s
+}
+
   // expose to main script handlers (clear/import/delete)
 window.supabase = supabase;
 window.loadQuotesOnce = loadQuotesOnce;

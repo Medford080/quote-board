@@ -481,6 +481,7 @@ window.addEventListener('keydown', (e) => {
   const BUCKET = "quote-images";
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  window.supabase = supabase;            // <-- keep this (expose for main script)
 
   // ===== Auth UI =====
   const authBtn = document.getElementById('authBtn');
@@ -575,6 +576,10 @@ addBtn?.addEventListener('click', async () => {
 
     // Auth required for write/upload (RLS)
     const { data: { user } } = await supabase.auth.getUser();
+    const { data: sessionData } = await supabase.auth.getSession();
+    console.log("[AUTH] user:", user?.id, "email:", user?.email);
+    console.log("[AUTH] access_token present:", !!sessionData?.session?.access_token);
+
     if (!user) { alert("Please sign in first (top-right) to add quotes/images."); return; }
 
     // Parse: "Quote — Author" (author optional)
@@ -615,12 +620,7 @@ addBtn?.addEventListener('click', async () => {
     const id = inserted?.[0]?.id || null;
 
     // Optimistic UI update with id
-    window.state.quotes.push({
-      id,
-      text,
-      author: author || "",
-      image: publicUrl || ""
-    });
+    window.state.quotes.push({ id, text, author: author || "", image: publicUrl || "" });
     window.saveState?.();
     window.updateStage?.();
     window.renderList?.();

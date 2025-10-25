@@ -509,123 +509,136 @@ window.addEventListener('keydown', (e) => {
     }
   });
 
-  // ===== Data loading =====
-  async function loadQuotesOnce() {
+  // ===== Data loading (robust; always replaces local) =====
+async function loadQuotesOnce() {
+  try {
     console.log("[LOAD] Fetching quotes...");
     const { data, error } = await supabase
       .from("quotes")
       .select("id, text, author, image_url")
-  .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true });
 
-const arr = (data || []).map(q => ({
-  id: q.id,
-  text: q.text || "",
-  author: q.author || "",
-  image: q.image_url || ""
-}));
+    if (error) {
+      console.warn("[LOAD] Supabase error:", error);
+    }
 
-console.log("[LOAD] Loaded", arr.length, "quotes");
+    const arr = (data || []).map(q => ({
+      id: q.id,
+      text: q.text || "",
+      author: q.author || "",
+      image: q.image_url || ""
+    }));
 
-// ✅ Always replace local with cloud (even if empty)
-window.state.quotes = arr;
-window.state.index = Math.min(window.state.index, Math.max(0, arr.length - 1));
+    console.log("[LOAD] Loaded", arr.length, "quotes");
 
-window.saveState?.();
-window.updateStage?.();
-window.renderList?.();
+    // ✅ Always replace local with cloud (even if empty)
+    window.state.quotes = arr;
+    window.state.index = Math.min(window.state.index, Math.max(0, arr.length - 1));
+
+  } catch (e) {
+    console.error("[LOAD] Unexpected error:", e);
+  } finally {
+    // Always refresh UI so placeholders disappear and screens stay in sync
+    window.saveState?.();
+    window.updateStage?.();
+    window.renderList?.();
   }
+}
 
-  // ===== Realtime =====
-  function subscribeRealtime() {
-    console.log("[RT] Subscribing to realtime changes…");
-    supabase
-      .channel("quotes-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "quotes" }, async () => {
+// ===== Realtime =====
+function subscribeRealtime() {
+  console.log("[RT] Subscribing to realtime changes…");
+  supabase
+    .channel("quotes-realtime")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "quotes" },
+      async () => {
         console.log("[RT] Change detected → reloading quotes");
         await loadQuotesOnce();
-      })
-      .subscribe();
-  }
+      }
+    )
+    .subscribe();
+}
 
-  // ===== Add Quote with optional image upload (robust) =====
-  const addBtn = document.getElementById('addQuoteBtn');
-  const textInput = document.getElementById('singleQuoteInput');
-  const imgInput  = document.getElementById('singleImageInput');
+// ===== Add Quote with optional image upload (returns id; optimistic update) =====
+const addBtn = document.getElementById('addQuoteBtn');
+const textInput = document.getElementById('singleQuoteInput');
+const imgInput  = document.getElementById('singleImageInput');
 
-  addBtn?.addEventListener('click', async () => {
-    try {
-      console.log("[ADD] Click detected");
+addBtn?.addEventListener('click', async () => {
+  try {
+    console.log("[ADD] Click detected");
 
-      const line = (textInput.value || "").trim();
-      if (!line) { alert("Please enter a quote"); return; }
+    const line = (textInput.value || "").trim();
+    if (!line) { alert("Please enter a quote"); return; }
 
-      // Auth required for write/upload (RLS)
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { alert("Please sign in first (top-right) to add quotes/images."); return; }
+    // Auth required for write/upload (RLS)
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { alert("Please sign in first (top-right) to add quotes/images."); return; }
 
-      // Parse: "Quote — Author" (author optional)
-      const m = line.split(/\s+[-–—]\s+/);
-      const text = (m[0] || "").replace(/^["“”']|["“”']$/g, '').trim();
-      const author = (m.length >= 2 ? m.slice(1).join(' - ') : "").trim();
+    // Parse: "Quote — Author" (author optional)
+    const m = line.split(/\s+[-–—]\s+/);
+    const text = (m[0] || "").replace(/^["“”']|["“”']$/g, '').trim();
+    const author = (m.length >= 2 ? m.slice(1).join(' - ') : "").trim();
 
-      let publicUrl = "";
+    let publicUrl = "";
 
-      // Upload image if provided
-      const file = imgInput?.files?.[0];
-      if (file) {
-        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-        if (!allowedTypes.includes(file.type)) {
-          alert("Please upload a JPG, PNG, WEBP, or GIF image.");
-          return;
-        }
-
-        const path = `${crypto.randomUUID()}-${file.name}`;
-        console.log("[ADD] Uploading to bucket:", BUCKET, "path:", path);
-
-        const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
-        if (upErr) { console.error("[ADD] Upload failed:", upErr); alert(`Upload failed: ${upErr.message}`); return; }
-
-        const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-        publicUrl = data.publicUrl;
-        console.log("[ADD] Public image URL:", publicUrl);
+    // Upload image if provided
+    const file = imgInput?.files?.[0];
+    if (file) {
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+      if (!allowedTypes.includes(file.type)) {
+        alert("Please upload a JPG, PNG, WEBP, or GIF image.");
+        return;
       }
 
-      // Insert row (with or without image)
-      const payload = { text, author: author || null, image_url: publicUrl || null };
-      const { data: inserted, error: insErr } = await supabase
-        .from('quotes')
-        .insert(payload)
-        .select('id');   // ✅ return id for future edits/deletes
-      if (insErr) { console.error("[ADD] Insert failed:", insErr); alert(`Save failed: ${insErr.message}`); return; }
-      
-      const id = inserted?.[0]?.id || null;
-      
-      // Optimistic UI update with id
-      window.state.quotes.push({
-        id,
-        text,
-        author: author || "",
-        image: publicUrl || ""
-      });
-      window.saveState?.();
-      window.updateStage?.();
-      window.renderList?.();
-      
-      // Re-sync from Supabase …
-      try { await loadQuotesOnce?.(); } catch (e) { console.warn("[ADD] loadQuotesOnce unavailable:", e); }
+      const path = `${crypto.randomUUID()}-${file.name}`;
+      console.log("[ADD] Uploading to bucket:", BUCKET, "path:", path);
 
+      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
+      if (upErr) { console.error("[ADD] Upload failed:", upErr); alert(`Upload failed: ${upErr.message}`); return; }
 
-      // Clear form
-      textInput.value = "";
-      if (imgInput) imgInput.value = "";
-      alert("Quote added successfully!");
-      console.log("[ADD] Quote inserted:", payload);
-
-    } catch (e) {
-      console.error("[ADD] Unexpected error", e);
-      alert("Unexpected error: " + e.message);
+      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+      publicUrl = data.publicUrl;
+      console.log("[ADD] Public image URL:", publicUrl);
     }
-  });
+
+    // Insert row (with or without image) and get id
+    const payload = { text, author: author || null, image_url: publicUrl || null };
+    const { data: inserted, error: insErr } = await supabase
+      .from('quotes')
+      .insert(payload)
+      .select('id');
+    if (insErr) { console.error("[ADD] Insert failed:", insErr); alert(`Save failed: ${insErr.message}`); return; }
+
+    const id = inserted?.[0]?.id || null;
+
+    // Optimistic UI update with id
+    window.state.quotes.push({
+      id,
+      text,
+      author: author || "",
+      image: publicUrl || ""
+    });
+    window.saveState?.();
+    window.updateStage?.();
+    window.renderList?.();
+
+    // Re-sync from Supabase so local state = DB
+    try { await loadQuotesOnce?.(); } catch (e) { console.warn("[ADD] loadQuotesOnce unavailable:", e); }
+
+    // Clear form
+    textInput.value = "";
+    if (imgInput) imgInput.value = "";
+    alert("Quote added successfully!");
+    console.log("[ADD] Quote inserted:", payload);
+
+  } catch (e) {
+    console.error("[ADD] Unexpected error", e);
+    alert("Unexpected error: " + e.message);
+  }
+});
 
   // ===== Boot after the main app exposes window.state/etc. =====
   // (Your main app dispatches: window.dispatchEvent(new Event('quoteAppReady')); )

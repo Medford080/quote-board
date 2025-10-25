@@ -253,7 +253,7 @@ el.singleQuoteInput.addEventListener('keydown', (e) => e.stopPropagation());
     const next = prompt('Edit quote: Use the format: Quote — Author (author optional)', `${q.text}${q.author?` — ${q.author}`:""}`);
     if(next===null) return; const parsed = parseLine(next.trim()); if(!parsed.text) return; state.quotes[i]=parsed; saveState(); updateStage();
   }
-  ffunction updateStage(){
+function updateStage(){
   const q = state.quotes[state.index] || { text: "(no quotes)" };
 
   // Text
@@ -268,17 +268,17 @@ el.singleQuoteInput.addEventListener('keydown', (e) => e.stopPropagation());
   el.themeBtn.textContent = state.theme === "light" ? "🌞" : "🌙";
   el.status.textContent = state.playing ? "playing" : "paused";
 
-  // NEW: Image support
-  // Your Supabase loader maps image_url -> image, but also support either field name.
-  const imgSrc = q.image || q.image_url || "";
+  // Image
+  const imgSrc = (q.image || q.image_url || "").trim();
   if (imgSrc) {
     el.quoteImage.src = imgSrc;
     el.quoteImageWrap.style.display = "";
   } else {
-    el.quoteImage.src = "";
+    el.quoteImage.removeAttribute("src");
     el.quoteImageWrap.style.display = "none";
   }
 }
+
   function next(){ step(1); } function prev(){ step(-1); }
   function step(delta){
     if(state.quotes.length===0) return;
@@ -292,12 +292,36 @@ el.singleQuoteInput.addEventListener('keydown', (e) => e.stopPropagation());
   function pause(){ state.playing = false; saveState(); if(timer){ clearInterval(timer); timer=null; } updateStage(); }
   function togglePlay(){ state.playing ? pause() : play(); }
   function animateSwap(){
-    el.quoteBox.style.opacity = 0; el.quoteBox.style.transform = "translateY(8px)";
-    setTimeout(()=>{ const q = state.quotes[state.index] || {text:"(no quotes)"};
-      const q = state.quotes[state.index] || {text:"(no quotes)"};
-el.quoteText.textContent = q.text || "(no quotes)";
-el.quoteAuthor.textContent = (state.showAuthor && q.author) ? `— ${q.author}` : "";
+  el.quoteBox.style.opacity = 0;
+  el.quoteBox.style.transform = "translateY(8px)";
+  setTimeout(()=>{
+    const q = state.quotes[state.index] || { text: "(no quotes)" };
 
+    // Update text
+    el.quoteText.textContent = q.text || "(no quotes)";
+    el.quoteAuthor.textContent = (state.showAuthor && q.author) ? `— ${q.author}` : "";
+
+    // Update image
+    const imgSrc = (q.image || q.image_url || "").trim();
+    if (imgSrc) {
+      el.quoteImage.src = imgSrc;
+      el.quoteImageWrap.style.display = "";
+    } else {
+      el.quoteImage.removeAttribute("src");
+      el.quoteImageWrap.style.display = "none";
+    }
+
+    // Animate back in
+    el.quoteBox.style.opacity = 1;
+    el.quoteBox.style.transform = "translateY(0)";
+  }, 150);
+}
+function escapeHtml(s){
+  return String(s).replace(/[&<>"']/g, m => (
+    {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]
+  ));
+}
+                    
 // NEW: update image during swap
 const imgSrc = q.image || q.image_url || "";
 if (imgSrc) {
@@ -380,14 +404,6 @@ window.addEventListener('keydown', (e) => {
   // Optional signal for other scripts
   window.dispatchEvent(new Event('quoteAppReady'));
 })();
-</script>
-
-<!-- EXPOSE app APIs for the Supabase module -->
-<script>
-  window.state = window.state || state;
-  window.saveState = window.saveState || saveState;
-  window.updateStage = window.updateStage || updateStage;
-  window.renderList = window.renderList || renderList;
 </script>
 
 <!-- SUPABASE LOADER (reads quotes; realtime updates) -->

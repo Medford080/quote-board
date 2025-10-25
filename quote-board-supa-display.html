@@ -175,6 +175,9 @@ const el = {
   clock: $('#clock'),
 };
 
+// ✅ Prevent keyboard shortcuts while typing in the Add Quote field
+el.singleQuoteInput.addEventListener('keydown', (e) => e.stopPropagation());
+    
   const defaultState = {
     quotes: [
       {text:"The obstacle is the way.", author:"Marcus Aurelius"},

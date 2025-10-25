@@ -35,6 +35,31 @@
   .kbd{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size:.85em; padding:.15rem .35rem; border-radius:.4rem; border:1px solid rgba(255,255,255,.2)}
   .list{display:flex; gap:.4rem; flex-wrap:wrap}
   .pill{border:1px solid rgba(255,255,255,.2); padding:.25rem .5rem; border-radius:999px}
+  .stage-inner {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr;  /* text | image */
+  gap: 3vw;
+  align-items: center;
+  justify-items: center;
+}
+.quote-image-wrap {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center; 
+  justify-content: center;
+}
+#quoteImage {
+  max-width: 100%;
+  max-height: 80vh;
+  object-fit: contain;    /* show entire image, don’t crop */
+  border-radius: 12px;
+}
+@media (max-width: 900px) {
+  .stage-inner { grid-template-columns: 1fr; gap: 2vh; }
+}
 </style>
 </head>
 <body>
@@ -113,12 +138,20 @@ Another quote — Unknown"></textarea>
   </div>
 
   <!-- Stage -->
-  <div class="quote-stage" id="stage">
+ <!-- Stage -->
+<div class="quote-stage" id="stage">
+  <div class="stage-inner" id="stageInner">
     <div class="quote" id="quote" style="font-size:72px">
       <div id="quoteText">Loading quotes…</div>
       <div id="quoteAuthor" class="author"></div>
     </div>
+
+    <!-- NEW: image for the current quote -->
+    <div class="quote-image-wrap" id="quoteImageWrap" style="display:none">
+      <img id="quoteImage" alt="" />
+    </div>
   </div>
+</div>
 
   <div class="footer">
     <div class="list">
@@ -169,6 +202,9 @@ const el = {
   quoteBox: $('#quote'),
   quoteText: $('#quoteText'),
   quoteAuthor: $('#quoteAuthor'),
+  // ✅ NEW — quote image elements for display
+  quoteImageWrap: $('#quoteImageWrap'),
+  quoteImage: $('#quoteImage'),
   // ✅ NEW — Sign In/Out button in the top-right
   authBtn: $('#authBtn'),
   themeBtn: $('#themeBtn'),
@@ -217,14 +253,32 @@ el.singleQuoteInput.addEventListener('keydown', (e) => e.stopPropagation());
     const next = prompt('Edit quote: Use the format: Quote — Author (author optional)', `${q.text}${q.author?` — ${q.author}`:""}`);
     if(next===null) return; const parsed = parseLine(next.trim()); if(!parsed.text) return; state.quotes[i]=parsed; saveState(); updateStage();
   }
-  function updateStage(){
-    const q = state.quotes[state.index] || {text:"(no quotes)"};
-    el.quoteText.textContent = q.text || "(no quotes)";
-    el.quoteAuthor.textContent = (state.showAuthor && q.author) ? `— ${q.author}` : "";
-    el.quoteBox.style.fontSize = state.fontSize + "px"; el.quoteBox.style.textAlign = state.align;
-    el.stage.style.padding = state.marginVh + "vh 6vw"; document.documentElement.className = state.theme === "light" ? "light" : "";
-    el.themeBtn.textContent = state.theme === "light" ? "🌞" : "🌙"; el.status.textContent = state.playing ? "playing" : "paused";
+  ffunction updateStage(){
+  const q = state.quotes[state.index] || { text: "(no quotes)" };
+
+  // Text
+  el.quoteText.textContent = q.text || "(no quotes)";
+  el.quoteAuthor.textContent = (state.showAuthor && q.author) ? `— ${q.author}` : "";
+
+  // Styles
+  el.quoteBox.style.fontSize = state.fontSize + "px";
+  el.quoteBox.style.textAlign = state.align;
+  el.stage.style.padding = state.marginVh + "vh 6vw";
+  document.documentElement.className = state.theme === "light" ? "light" : "";
+  el.themeBtn.textContent = state.theme === "light" ? "🌞" : "🌙";
+  el.status.textContent = state.playing ? "playing" : "paused";
+
+  // NEW: Image support
+  // Your Supabase loader maps image_url -> image, but also support either field name.
+  const imgSrc = q.image || q.image_url || "";
+  if (imgSrc) {
+    el.quoteImage.src = imgSrc;
+    el.quoteImageWrap.style.display = "";
+  } else {
+    el.quoteImage.src = "";
+    el.quoteImageWrap.style.display = "none";
   }
+}
   function next(){ step(1); } function prev(){ step(-1); }
   function step(delta){
     if(state.quotes.length===0) return;
@@ -240,9 +294,20 @@ el.singleQuoteInput.addEventListener('keydown', (e) => e.stopPropagation());
   function animateSwap(){
     el.quoteBox.style.opacity = 0; el.quoteBox.style.transform = "translateY(8px)";
     setTimeout(()=>{ const q = state.quotes[state.index] || {text:"(no quotes)"};
-      el.quoteText.textContent = q.text || "(no quotes)"; el.quoteAuthor.textContent = (state.showAuthor && q.author) ? `— ${q.author}` : "";
-      el.quoteBox.style.opacity = 1; el.quoteBox.style.transform = "translateY(0)"; }, 150);
-  }
+      const q = state.quotes[state.index] || {text:"(no quotes)"};
+el.quoteText.textContent = q.text || "(no quotes)";
+el.quoteAuthor.textContent = (state.showAuthor && q.author) ? `— ${q.author}` : "";
+
+// NEW: update image during swap
+const imgSrc = q.image || q.image_url || "";
+if (imgSrc) {
+  el.quoteImage.src = imgSrc;
+  el.quoteImageWrap.style.display = "";
+} else {
+  el.quoteImage.src = "";
+  el.quoteImageWrap.style.display = "none";
+}
+
   function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
 
   // Controls
@@ -364,107 +429,129 @@ window.addEventListener('keydown', (e) => {
 
   // ===== Data loading =====
   async function loadQuotesOnce() {
+    console.log("[LOAD] Fetching quotes...");
     const { data, error } = await supabase
       .from("quotes")
       .select("text, author, image_url")
       .order("created_at", { ascending: true });
 
     if (error) {
-      console.warn("Supabase error:", error);
+      console.warn("[LOAD] Supabase error:", error);
       return;
     }
 
+    // Map DB rows → local app shape (image_url → image)
     const arr = (data || []).map(q => ({
       text: q.text || "",
       author: q.author || "",
       image: q.image_url || ""
     })).filter(q => q.text);
 
-    window.state.quotes = arr.length ? arr : window.state.quotes;
-    window.state.index  = Math.min(window.state.index, Math.max(0, window.state.quotes.length - 1));
-    window.saveState(); window.updateStage(); window.renderList();
+    console.log("[LOAD] Loaded", arr.length, "quotes");
+
+    if (arr.length) {
+      window.state.quotes = arr;
+      window.state.index = Math.min(window.state.index, Math.max(0, arr.length - 1));
+    }
+    window.saveState?.(); 
+    window.updateStage?.(); 
+    window.renderList?.();
   }
 
+  // ===== Realtime =====
   function subscribeRealtime() {
+    console.log("[RT] Subscribing to realtime changes…");
     supabase
       .channel("quotes-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "quotes" }, loadQuotesOnce)
+      .on("postgres_changes", { event: "*", schema: "public", table: "quotes" }, async () => {
+        console.log("[RT] Change detected → reloading quotes");
+        await loadQuotesOnce();
+      })
       .subscribe();
   }
 
- // ===== Add Quote with optional image upload (robust) =====
-const addBtn = document.getElementById('addQuoteBtn');
-const textInput = document.getElementById('singleQuoteInput');
-const imgInput  = document.getElementById('singleImageInput');
+  // ===== Add Quote with optional image upload (robust) =====
+  const addBtn = document.getElementById('addQuoteBtn');
+  const textInput = document.getElementById('singleQuoteInput');
+  const imgInput  = document.getElementById('singleImageInput');
 
-addBtn?.addEventListener('click', async () => {
-  try {
-    console.log("[ADD] Click detected");
+  addBtn?.addEventListener('click', async () => {
+    try {
+      console.log("[ADD] Click detected");
 
-    const line = (textInput.value || "").trim();
-    if (!line) { alert("Please enter a quote"); return; }
+      const line = (textInput.value || "").trim();
+      if (!line) { alert("Please enter a quote"); return; }
 
-    // Require auth for writing per your RLS policies
-    const { data: { user }, error: userErr } = await supabase.auth.getUser();
-    if (!user) { alert("Please sign in first (top-right) to add quotes/images."); return; }
+      // Auth required for write/upload (RLS)
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { alert("Please sign in first (top-right) to add quotes/images."); return; }
 
-    // Parse: "Quote — Author" (author optional)
-    const m = line.split(/\s+[-–—]\s+/);
-    const text = (m[0] || "").replace(/^["“”']|["“”']$/g, '').trim();
-    const author = (m.length >= 2 ? m.slice(1).join(' - ') : "").trim();
+      // Parse: "Quote — Author" (author optional)
+      const m = line.split(/\s+[-–—]\s+/);
+      const text = (m[0] || "").replace(/^["“”']|["“”']$/g, '').trim();
+      const author = (m.length >= 2 ? m.slice(1).join(' - ') : "").trim();
 
-    let publicUrl = "";
+      let publicUrl = "";
 
-    // Upload image if provided
-    const file = imgInput?.files?.[0];
-    if (file) {
-      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-      if (!allowedTypes.includes(file.type)) {
-        alert("Please upload a JPG, PNG, WEBP, or GIF image.");
-        return;
+      // Upload image if provided
+      const file = imgInput?.files?.[0];
+      if (file) {
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        if (!allowedTypes.includes(file.type)) {
+          alert("Please upload a JPG, PNG, WEBP, or GIF image.");
+          return;
+        }
+
+        const path = `${crypto.randomUUID()}-${file.name}`;
+        console.log("[ADD] Uploading to bucket:", BUCKET, "path:", path);
+
+        const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
+        if (upErr) { console.error("[ADD] Upload failed:", upErr); alert(`Upload failed: ${upErr.message}`); return; }
+
+        const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+        publicUrl = data.publicUrl;
+        console.log("[ADD] Public image URL:", publicUrl);
       }
 
-      const path = `${crypto.randomUUID()}-${file.name}`;
-      console.log("Uploading to bucket:", BUCKET, "path:", path);
+      // Insert row (with or without image)
+      const payload = { text, author: author || null, image_url: publicUrl || null };
+      const { error: insErr } = await supabase.from('quotes').insert(payload);
+      if (insErr) { console.error("[ADD] Insert failed:", insErr); alert(`Save failed: ${insErr.message}`); return; }
 
-      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
-      if (upErr) { console.error("Upload failed:", upErr); alert(`Upload failed: ${upErr.message}`); return; }
+      // Optimistic UI update
+      window.state.quotes.push({
+        text,
+        author: author || "",
+        image: publicUrl || ""   // UI uses q.image
+      });
+      window.saveState?.();
+      window.updateStage?.();
+      window.renderList?.();
 
-      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-      publicUrl = data.publicUrl;
-      console.log("Public image URL:", publicUrl);
+      // Re-sync from Supabase so local state = DB
+      try { await loadQuotesOnce?.(); } catch (e) { console.warn("[ADD] loadQuotesOnce unavailable:", e); }
+
+      // Clear form
+      textInput.value = "";
+      if (imgInput) imgInput.value = "";
+      alert("Quote added successfully!");
+      console.log("[ADD] Quote inserted:", payload);
+
+    } catch (e) {
+      console.error("[ADD] Unexpected error", e);
+      alert("Unexpected error: " + e.message);
     }
+  });
 
-    // Insert quote (with or without image)
-    const payload = { text, author: author || null, image_url: publicUrl || null };
-    const { error: insErr } = await supabase.from('quotes').insert(payload);
-    if (insErr) { console.error("Insert failed:", insErr); alert(`Save failed: ${insErr.message}`); return; }
-
-    // ✅ Optimistic UI update so you see it instantly
-    window.state.quotes.push({
-      text,
-      author: author || "",
-      image: publicUrl || ""   // your display uses q.image
-    });
-    window.saveState();
-    window.updateStage();
-    window.renderList();
-
-    // ✅ Re-sync from Supabase so local state matches DB
-    try { await loadQuotesOnce?.(); } catch (e) { console.warn("[ADD] loadQuotesOnce unavailable:", e); }
-
-    // Clear form
-    textInput.value = "";
-    if (imgInput) imgInput.value = "";
-    alert("Quote added successfully!");
-    console.log("Quote inserted:", payload);
-
-  } catch (e) {
-    console.error("[ADD] Unexpected error", e);
-    alert("Unexpected error: " + e.message);
-  }
-});
+  // ===== Boot after the main app exposes window.state/etc. =====
+  // (Your main app dispatches: window.dispatchEvent(new Event('quoteAppReady')); )
+  window.addEventListener("quoteAppReady", async () => {
+    await updateAuthButton();
+    await loadQuotesOnce();
+    subscribeRealtime();
+  });
 </script>
+
 
 </body>
 </html>

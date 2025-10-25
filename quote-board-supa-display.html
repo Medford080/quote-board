@@ -392,85 +392,78 @@ window.addEventListener('keydown', (e) => {
       .subscribe();
   }
 
- // ===== Add Quote with optional image upload =====
+ // ===== Add Quote with optional image upload (robust) =====
 const addBtn = document.getElementById('addQuoteBtn');
 const textInput = document.getElementById('singleQuoteInput');
 const imgInput  = document.getElementById('singleImageInput');
 
 addBtn?.addEventListener('click', async () => {
-  const line = (textInput.value || "").trim();
-  if (!line) return;
+  try {
+    console.log("[ADD] Click detected");
 
-  // Require auth for writing per your RLS policies
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
-    alert("Please sign in first (top-right) to add quotes/images.");
-    return;
-  }
+    const line = (textInput.value || "").trim();
+    if (!line) { alert("Please enter a quote"); return; }
 
-  // Parse: "Quote — Author" (author optional)
-  const m = line.split(/\s+[-–—]\s+/);
-  const text = (m[0] || "").replace(/^["“”']|["“”']$/g, '').trim();
-  const author = (m.length >= 2 ? m.slice(1).join(' - ') : "").trim();
+    // Require auth for writing per your RLS policies
+    const { data: { user }, error: userErr } = await supabase.auth.getUser();
+    if (!user) { alert("Please sign in first (top-right) to add quotes/images."); return; }
 
-  let publicUrl = "";
+    // Parse: "Quote — Author" (author optional)
+    const m = line.split(/\s+[-–—]\s+/);
+    const text = (m[0] || "").replace(/^["“”']|["“”']$/g, '').trim();
+    const author = (m.length >= 2 ? m.slice(1).join(' - ') : "").trim();
 
-  // ✅ UPLOAD IMAGE IF PROVIDED
-  if (imgInput?.files && imgInput.files[0]) {
-    const file = imgInput.files[0];
+    let publicUrl = "";
 
-    // Optional type filter for clarity (JPG, PNG, WEBP, GIF)
-    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    if (!allowedTypes.includes(file.type)) {
-      alert("Please upload a JPG, PNG, WEBP, or GIF image.");
-      return;
+    // Upload image if provided
+    const file = imgInput?.files?.[0];
+    if (file) {
+      const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+      if (!allowedTypes.includes(file.type)) {
+        alert("Please upload a JPG, PNG, WEBP, or GIF image.");
+        return;
+      }
+
+      const path = `${crypto.randomUUID()}-${file.name}`;
+      console.log("Uploading to bucket:", BUCKET, "path:", path);
+
+      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
+      if (upErr) { console.error("Upload failed:", upErr); alert(`Upload failed: ${upErr.message}`); return; }
+
+      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+      publicUrl = data.publicUrl;
+      console.log("Public image URL:", publicUrl);
     }
 
-    const path = `${crypto.randomUUID()}-${file.name}`;
-    console.log("Uploading to bucket:", BUCKET, "path:", path);
+    // Insert quote (with or without image)
+    const payload = { text, author: author || null, image_url: publicUrl || null };
+    const { error: insErr } = await supabase.from('quotes').insert(payload);
+    if (insErr) { console.error("Insert failed:", insErr); alert(`Save failed: ${insErr.message}`); return; }
 
-    // ✅ This line actually uploads to your Supabase bucket
-    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
-    if (upErr) {
-      console.error("Upload failed:", upErr);
-      alert(`Upload failed: ${upErr.message}`);
-      return;
-    }
+    // ✅ Optimistic UI update so you see it instantly
+    window.state.quotes.push({
+      text,
+      author: author || "",
+      image: publicUrl || ""   // your display uses q.image
+    });
+    window.saveState();
+    window.updateStage();
+    window.renderList();
 
-    // ✅ Get a public URL for the uploaded image
-    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-    publicUrl = data.publicUrl;
-    console.log("Public image URL:", publicUrl);
+    // ✅ Re-sync from Supabase so local state matches DB
+    try { await loadQuotesOnce?.(); } catch (e) { console.warn("[ADD] loadQuotesOnce unavailable:", e); }
+
+    // Clear form
+    textInput.value = "";
+    if (imgInput) imgInput.value = "";
+    alert("Quote added successfully!");
+    console.log("Quote inserted:", payload);
+
+  } catch (e) {
+    console.error("[ADD] Unexpected error", e);
+    alert("Unexpected error: " + e.message);
   }
-
-  // ✅ Insert quote (with or without image)
-  const { error: insErr } = await supabase.from('quotes').insert({
-    text,
-    author: author || null,
-    image_url: publicUrl || null
-  });
-
-  if (insErr) {
-    console.error("Insert failed:", insErr);
-    alert(`Save failed: ${insErr.message}`);
-    return;
-  }
-
-  // ✅ Clear form and confirm
-  textInput.value = "";
-  if (imgInput) imgInput.value = "";
-  alert("Quote added successfully!");
-
-  // Optional: log the current state so you can confirm in console
-  console.log("Quote inserted:", { text, author, image_url: publicUrl });
 });
-
-  // ===== Boot =====
-  window.addEventListener("quoteAppReady", async () => {
-    await updateAuthButton();
-    await loadQuotesOnce();
-    subscribeRealtime();
-  });
 </script>
 
 </body>

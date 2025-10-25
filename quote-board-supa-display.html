@@ -516,7 +516,7 @@ window.addEventListener('keydown', (e) => {
       .from("quotes")
       .select("id, text, author, image_url")
   .order("created_at", { ascending: true });
-…
+
 const arr = (data || []).map(q => ({
   id: q.id,
   text: q.text || "",

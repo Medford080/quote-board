@@ -236,7 +236,30 @@ Another quote — Unknown"></textarea>
   function tickClock(){ const d=new Date(); const hh=d.getHours().toString().padStart(2,'0'); const mm=d.getMinutes().toString().padStart(2,'0'); el.clock.textContent = hh+":"+mm; }
   setInterval(tickClock, 10000); tickClock();
 
-  updateStage(); renderList(); if(state.playing) play();
+  updateStage();
+  renderList();
+  if(state.playing) play();
+  // URL param import: ?quotes=Quote%20one|Author1;Quote%20two|Author2
+  const url = new URL(window.location.href);
+  const param = url.searchParams.get("quotes");
+  if(param){
+    const items = decodeURIComponent(param).split(';').map(s=>s.trim()).filter(Boolean);
+    const qs = items.map(item=>{
+      const [t,a=""] = item.split('|');
+      return {text:t.trim(), author:a.trim()};
+    });
+    state.quotes = qs.length ? qs : state.quotes;
+    saveState(); updateStage(); renderList();
+  }
+
+  // ✅ ADD THESE LINES BELOW
+  window.state = state;
+  window.saveState = saveState;
+  window.updateStage = updateStage;
+  window.renderList = renderList;
+
+  // Optional signal for other scripts
+  window.dispatchEvent(new Event('quoteAppReady'));
 })();
 </script>
 
@@ -252,7 +275,6 @@ Another quote — Unknown"></textarea>
 <script type="module">
   import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-  // 🔧 Paste YOUR project details
   const SUPABASE_URL = "https://ojwukbzdmvnkapfsvilt.supabase.co";
   const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9qd3VrYnpkbXZua2FwZnN2aWx0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjEzNjAwNDUsImV4cCI6MjA3NjkzNjA0NX0.LAOfKFxBoySyRIZRl0aGqslMvatlVkou3fwCN1oefKA";
 
@@ -263,7 +285,11 @@ Another quote — Unknown"></textarea>
       .from("quotes")
       .select("text, author, image_url")
       .order("created_at", { ascending: true });
-    if (error) { console.warn(error); return; }
+
+    if (error) {
+      console.warn("Supabase error:", error);
+      return;
+    }
 
     const arr = (data || []).map(q => ({
       text: q.text || "",
@@ -271,23 +297,27 @@ Another quote — Unknown"></textarea>
       image: q.image_url || ""
     })).filter(q => q.text);
 
-    // Replace current quotes and refresh UI
+    // ✅ Now works because we exposed these in Step 1
     window.state.quotes = arr.length ? arr : window.state.quotes;
-    window.state.index  = Math.min(window.state.index, Math.max(0, window.state.quotes.length - 1));
-    window.saveState(); window.updateStage(); window.renderList();
+    window.state.index = Math.min(window.state.index, Math.max(0, window.state.quotes.length - 1));
+    window.saveState();
+    window.updateStage();
+    window.renderList();
   }
 
   function subscribeRealtime() {
     supabase
-      .channel('quotes-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'quotes' }, loadQuotesOnce)
+      .channel("quotes-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "quotes" }, loadQuotesOnce)
       .subscribe();
   }
 
-  window.addEventListener('load', async () => {
+  // ✅ Wait until the main app fires its "ready" event
+  window.addEventListener("quoteAppReady", async () => {
     await loadQuotesOnce();
     subscribeRealtime();
   });
 </script>
+
 </body>
 </html>

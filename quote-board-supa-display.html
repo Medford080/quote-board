@@ -392,50 +392,78 @@ window.addEventListener('keydown', (e) => {
       .subscribe();
   }
 
-  // ===== Add Quote with optional image upload =====
-  const addBtn = document.getElementById('addQuoteBtn');
-  const textInput = document.getElementById('singleQuoteInput');
-  const imgInput  = document.getElementById('singleImageInput');
+ // ===== Add Quote with optional image upload =====
+const addBtn = document.getElementById('addQuoteBtn');
+const textInput = document.getElementById('singleQuoteInput');
+const imgInput  = document.getElementById('singleImageInput');
 
-  addBtn?.addEventListener('click', async () => {
-    const line = (textInput.value || "").trim();
-    if (!line) return;
+addBtn?.addEventListener('click', async () => {
+  const line = (textInput.value || "").trim();
+  if (!line) return;
 
-    // Require auth for writing per your RLS policies
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      alert("Please sign in first (top-right) to add quotes/images.");
+  // Require auth for writing per your RLS policies
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    alert("Please sign in first (top-right) to add quotes/images.");
+    return;
+  }
+
+  // Parse: "Quote — Author" (author optional)
+  const m = line.split(/\s+[-–—]\s+/);
+  const text = (m[0] || "").replace(/^["“”']|["“”']$/g, '').trim();
+  const author = (m.length >= 2 ? m.slice(1).join(' - ') : "").trim();
+
+  let publicUrl = "";
+
+  // ✅ UPLOAD IMAGE IF PROVIDED
+  if (imgInput?.files && imgInput.files[0]) {
+    const file = imgInput.files[0];
+
+    // Optional type filter for clarity (JPG, PNG, WEBP, GIF)
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!allowedTypes.includes(file.type)) {
+      alert("Please upload a JPG, PNG, WEBP, or GIF image.");
       return;
     }
 
-    // Parse: "Quote — Author" (author optional)
-    const m = line.split(/\s+[-–—]\s+/);
-    const text = (m[0] || "").replace(/^["“”']|["“”']$/g,'').trim();
-    const author = (m.length >= 2 ? m.slice(1).join(' - ') : "").trim();
+    const path = `${crypto.randomUUID()}-${file.name}`;
+    console.log("Uploading to bucket:", BUCKET, "path:", path);
 
-    let publicUrl = "";
-
-    // Upload image if provided
-    if (imgInput?.files && imgInput.files[0]) {
-      const file = imgInput.files[0];
-      const path = `${crypto.randomUUID()}-${file.name}`;
-      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
-      if (upErr) { alert(`Upload failed: ${upErr.message}`); return; }
-      const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
-      publicUrl = data.publicUrl;
+    // ✅ This line actually uploads to your Supabase bucket
+    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { upsert: false });
+    if (upErr) {
+      console.error("Upload failed:", upErr);
+      alert(`Upload failed: ${upErr.message}`);
+      return;
     }
 
-    // Insert quote row
-    const { error: insErr } = await supabase.from('quotes').insert({
-      text, author: author || null, image_url: publicUrl || null
-    });
-    if (insErr) { alert(`Save failed: ${insErr.message}`); return; }
+    // ✅ Get a public URL for the uploaded image
+    const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
+    publicUrl = data.publicUrl;
+    console.log("Public image URL:", publicUrl);
+  }
 
-    // Clear form (realtime will refresh displays)
-    textInput.value = "";
-    if (imgInput) imgInput.value = "";
-    alert("Quote added!");
+  // ✅ Insert quote (with or without image)
+  const { error: insErr } = await supabase.from('quotes').insert({
+    text,
+    author: author || null,
+    image_url: publicUrl || null
   });
+
+  if (insErr) {
+    console.error("Insert failed:", insErr);
+    alert(`Save failed: ${insErr.message}`);
+    return;
+  }
+
+  // ✅ Clear form and confirm
+  textInput.value = "";
+  if (imgInput) imgInput.value = "";
+  alert("Quote added successfully!");
+
+  // Optional: log the current state so you can confirm in console
+  console.log("Quote inserted:", { text, author, image_url: publicUrl });
+});
 
   // ===== Boot =====
   window.addEventListener("quoteAppReady", async () => {

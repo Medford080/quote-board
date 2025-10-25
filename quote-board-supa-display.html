@@ -263,10 +263,26 @@ const el = {
   el.exportBtn.onclick = ()=>{ const text = state.quotes.map(q => q.author ? `${q.text} — ${q.author}` : q.text).join("\n");
     const blob = new Blob([text], {type:"text/plain"}); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "quotes.txt"; a.click(); URL.revokeObjectURL(url); };
 
-  window.addEventListener('keydown', (e)=>{ if(e.key===' '){ e.preventDefault(); togglePlay(); }
-    if(e.key==='ArrowRight'){ next(); } if(e.key==='ArrowLeft'){ prev(); }
-    if(e.key.toLowerCase()==='f'){ el.fullscreenBtn.click(); } if(e.key.toLowerCase()==='s'){ el.settingsBtn.click(); }
-    if(e.key.toLowerCase()==='m'){ el.manageBtn.click(); } if(e.key.toLowerCase()==='t'){ el.themeBtn.click(); } });
+window.addEventListener('keydown', (e) => {
+  // If the user is typing in an input/textarea/contenteditable, don’t trigger shortcuts
+  const t = e.target;
+  const isTyping =
+    t && (
+      t.tagName === 'INPUT' ||
+      t.tagName === 'TEXTAREA' ||
+      t.isContentEditable
+    );
+
+  if (isTyping) return;
+
+  if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+  else if (e.key === 'ArrowRight') { next(); }
+  else if (e.key === 'ArrowLeft') { prev(); }
+  else if (e.key.toLowerCase() === 'f') { el.fullscreenBtn.click(); }
+  else if (e.key.toLowerCase() === 's') { el.settingsBtn.click(); }
+  else if (e.key.toLowerCase() === 'm') { el.manageBtn.click(); }
+  else if (e.key.toLowerCase() === 't') { el.themeBtn.click(); }
+});
 
   function tickClock(){ const d=new Date(); const hh=d.getHours().toString().padStart(2,'0'); const mm=d.getMinutes().toString().padStart(2,'0'); el.clock.textContent = hh+":"+mm; }
   setInterval(tickClock, 10000); tickClock();

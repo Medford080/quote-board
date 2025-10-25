@@ -259,7 +259,7 @@ el.singleQuoteInput.addEventListener('keydown', (e) => e.stopPropagation());
   el.marginInput.value = state.marginVh; el.marginInput.oninput = e=>{ state.marginVh = Number(e.target.value||6); saveState(); updateStage(); };
   el.showAuthorSelect.value = String(state.showAuthor); el.showAuthorSelect.onchange = e=>{ state.showAuthor = (e.target.value==="true"); saveState(); updateStage(); };
 
-  el.addQuoteBtn.onclick = ()=>{ const line = el.singleQuoteInput.value.trim(); if(!line) return; const q = parseLine(line); state.quotes.push(q); el.singleQuoteInput.value = ""; saveState(); updateStage(); };
+ el.addQuoteBtn.onclick = () => {};
   el.clearAllBtn.onclick = ()=>{ if(confirm("Remove ALL quotes? This cannot be undone.")){ state.quotes = []; state.index = 0; saveState(); updateStage(); } };
   el.importBtn.onclick = ()=>{ const lines = el.bulkInput.value.split(/\r?\n/).map(s=>s.trim()).filter(Boolean); if(!lines.length) return;
     const qs = lines.map(parseLine); state.quotes.push(...qs); el.bulkInput.value = ""; saveState(); updateStage(); };

@@ -192,6 +192,31 @@ Another quote — Unknown"></textarea>
 (function(){
   const $ = s => document.querySelector(s);
   const LS_KEY = "quote_board_v1";
+  // Choose image layout: "right" (default), "left", or "alternate"
+const LAYOUT_MODE = "alternate"; // change to "right" or "left" if you prefer
+function applyLayout({ hasImage, index }) {
+  const root = el.stageInner || document.getElementById('stageInner');
+  if (!root) return;
+
+  // reset
+  root.classList.remove('no-image', 'image-left');
+
+  // No image -> center text
+  if (!hasImage) {
+    root.classList.add('no-image');
+    return;
+  }
+
+  // With image -> decide left/right
+  if (LAYOUT_MODE === 'left') {
+    root.classList.add('image-left');
+  } else if (LAYOUT_MODE === 'alternate') {
+    // even indices: image left, odd indices: image right
+    if ((index || 0) % 2 === 0) root.classList.add('image-left');
+  }
+  // LAYOUT_MODE === 'right' => do nothing (default is image on right)
+}
+
 const el = {
   status: $('#status'),
   playBtn: $('#playBtn'),
@@ -202,6 +227,7 @@ const el = {
   manageBtn: $('#manageBtn'),
   settingsPanel: $('#settingsPanel'),
   managePanel: $('#managePanel'),
+  stageInner: $('#stageInner'),
   intervalInput: $('#intervalInput'),
   shuffleSelect: $('#shuffleSelect'),
   fontSizeInput: $('#fontSizeInput'),
@@ -308,15 +334,17 @@ function updateStage(){
   el.status.textContent = state.playing ? "playing" : "paused";
 
   // Image
-  const imgSrc = (q.image || q.image_url || "").trim();
-  if (imgSrc) {
-    el.quoteImage.src = imgSrc;
-    el.quoteImageWrap.style.display = "";
-  } else {
-    el.quoteImage.removeAttribute("src");
-    el.quoteImageWrap.style.display = "none";
-  }
-}
+const imgSrc = (q.image || q.image_url || "").trim();
+const hasImage = !!imgSrc;
+if (hasImage) {
+   el.quoteImage.src = imgSrc;
+   el.quoteImageWrap.style.display = "";
+ } else {
+   el.quoteImage.removeAttribute("src");
+   el.quoteImageWrap.style.display = "none";
+ }
+ // Apply layout (no-image centers text; otherwise left/right/alternate)
+ applyLayout({ hasImage, index: state.index });
 
 // Navigation + playback helpers (unchanged)
 function next(){ step(1); }
@@ -360,14 +388,17 @@ function animateSwap(){
     el.quoteAuthor.textContent = (state.showAuthor && q.author) ? `— ${q.author}` : "";
 
     // Update image
-    const imgSrc = (q.image || q.image_url || "").trim();
-    if (imgSrc) {
-      el.quoteImage.src = imgSrc;
-      el.quoteImageWrap.style.display = "";
-    } else {
-      el.quoteImage.removeAttribute("src");
-      el.quoteImageWrap.style.display = "none";
-    }
+   const imgSrc = (q.image || q.image_url || "").trim();
+   const hasImage = !!imgSrc;
+   if (hasImage) {
+     el.quoteImage.src = imgSrc;
+     el.quoteImageWrap.style.display = "";
+   } else {
+     el.quoteImage.removeAttribute("src");
+     el.quoteImageWrap.style.display = "none";
+   }
+   // Make sure layout reacts during slide change too
+   applyLayout({ hasImage, index: state.index });
 
     // Animate back in
     el.quoteBox.style.opacity = 1;

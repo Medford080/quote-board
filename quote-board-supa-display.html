@@ -388,15 +388,20 @@ function animateSwap(){
     el.quoteAuthor.textContent = (state.showAuthor && q.author) ? `— ${q.author}` : "";
 
     // Update image
-   const imgSrc = (q.image || q.image_url || "").trim();
-   const hasImage = !!imgSrc;
-   if (hasImage) {
-     el.quoteImage.src = imgSrc;
-     el.quoteImageWrap.style.display = "";
-   } else {
-     el.quoteImage.removeAttribute("src");
-     el.quoteImageWrap.style.display = "none";
-   }
+    const imgSrc = (q.image || q.image_url || "").trim();
+    if (imgSrc) {
+      el.quoteImage.src = imgSrc;
+      el.quoteImageWrap.style.display = "";
+    } else {
+      el.quoteImage.removeAttribute("src");
+      el.quoteImageWrap.style.display = "none";
+    }
+
+    // Animate back in
+    el.quoteBox.style.opacity = 1;
+    el.quoteBox.style.transform = "translateY(0)";
+  }, 150);
+}
    // Make sure layout reacts during slide change too
    applyLayout({ hasImage, index: state.index });
 
@@ -411,9 +416,6 @@ function escapeHtml(s){
     {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]
   ));
 }
-
-  function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m])); }
-
   // Controls
   el.playBtn.onclick = togglePlay; el.prevBtn.onclick = prev; el.nextBtn.onclick = next;
   el.fullscreenBtn.onclick = ()=>{ const root = document.documentElement; if(!document.fullscreenElement){ root.requestFullscreen?.(); } else { document.exitFullscreen?.(); } };
@@ -493,35 +495,52 @@ window.addEventListener('keydown', (e) => {
   else if (e.key.toLowerCase() === 't') { el.themeBtn.click(); }
 });
 
-  function tickClock(){ const d=new Date(); const hh=d.getHours().toString().padStart(2,'0'); const mm=d.getMinutes().toString().padStart(2,'0'); el.clock.textContent = hh+":"+mm; }
-  setInterval(tickClock, 10000); tickClock();
+  function tickClock() {
+  const d = new Date();
+  const hh = d.getHours().toString().padStart(2, '0');
+  const mm = d.getMinutes().toString().padStart(2, '0');
+  el.clock.textContent = hh + ":" + mm;
+}
+setInterval(tickClock, 10000);
+tickClock();
 
+updateStage();
+renderList();
+if (state.playing) play();
+
+// URL param import: ?quotes=Quote%20one|Author1;Quote%20two|Author2
+const url = new URL(window.location.href);
+const param = url.searchParams.get("quotes");
+if (param) {
+  const items = decodeURIComponent(param).split(';').map(s => s.trim()).filter(Boolean);
+  const qs = items.map(item => {
+    const [t, a = ""] = item.split('|');
+    return { text: t.trim(), author: a.trim() };
+  });
+  state.quotes = qs.length ? qs : state.quotes;
+  saveState();
   updateStage();
   renderList();
-  if(state.playing) play();
-  // URL param import: ?quotes=Quote%20one|Author1;Quote%20two|Author2
-  const url = new URL(window.location.href);
-  const param = url.searchParams.get("quotes");
-  if(param){
-    const items = decodeURIComponent(param).split(';').map(s=>s.trim()).filter(Boolean);
-    const qs = items.map(item=>{
-      const [t,a=""] = item.split('|');
-      return {text:t.trim(), author:a.trim()};
-    });
-    state.quotes = qs.length ? qs : state.quotes;
-    saveState(); updateStage(); renderList();
-  }
+}
 
-  // ✅ ADD THESE LINES BELOW
-  window.state = state;
-  window.saveState = saveState;
-  window.updateStage = updateStage;
-  window.renderList = renderList;
-
-  // Optional signal for other scripts
-  window.dispatchEvent(new Event('quoteAppReady'));
+// Expose for other scripts (Supabase module uses these)
+window.state = state;
+window.saveState = saveState;
+window.updateStage = updateStage;
+window.renderList = renderList;
+// If the Supabase loader fetched before we were ready, apply now
+if (window.__pendingQuotes) {
+  window.state.quotes = window.__pendingQuotes;
+  delete window.__pendingQuotes;
+  window.saveState();
+  window.updateStage();
+  window.renderList();
+}
+// Signal ready
+window.dispatchEvent(new Event('quoteAppReady'));
 })();
 </script>
+
 
 <!-- SUPABASE LOADER (reads quotes; realtime updates) -->
 <script type="module">
@@ -572,6 +591,7 @@ async function loadQuotesOnce() {
 
     if (error) {
       console.warn("[LOAD] Supabase error:", error);
+      return;
     }
 
     const arr = (data || []).map(q => ({
@@ -583,13 +603,23 @@ async function loadQuotesOnce() {
 
     console.log("[LOAD] Loaded", arr.length, "quotes");
 
-    // ✅ Always replace local with cloud (even if empty)
+    // If the main app isn't ready yet, stash and exit
+    if (!window.state) {
+      window.__pendingQuotes = arr;
+      return;
+    }
+
+    // Main app is ready — apply now
     window.state.quotes = arr;
     window.state.index = Math.min(window.state.index, Math.max(0, arr.length - 1));
+    window.saveState?.();
+    window.updateStage?.();
+    window.renderList?.();
 
   } catch (e) {
     console.error("[LOAD] Unexpected error:", e);
-  } finally {
+  }
+}
     // Always refresh UI so placeholders disappear and screens stay in sync
     window.saveState?.();
     window.updateStage?.();

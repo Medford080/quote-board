@@ -415,7 +415,6 @@ function animateSwap(){
     el.quoteBox.style.opacity = 1;
     el.quoteBox.style.transform = "translateY(0)";
   }, 150);
-}
 
 function escapeHtml(s){
   return String(s).replace(/[&<>"']/g, m => (
@@ -632,7 +631,6 @@ async function loadQuotesOnce() {
     window.updateStage?.();
     window.renderList?.();
   }
-}
 
 // ===== Realtime =====
 function subscribeRealtime() {

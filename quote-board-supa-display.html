@@ -406,7 +406,6 @@ function animateSwap(){
     el.quoteBox.style.opacity = 1;
     el.quoteBox.style.transform = "translateY(0)";
   }, 150);
-}
 
    // Make sure layout reacts during slide change too
    applyLayout({ hasImage, index: state.index });
@@ -625,13 +624,11 @@ async function loadQuotesOnce() {
     console.error("[LOAD] Unexpected error:", e);
   }
 }
-
     // Always refresh UI so placeholders disappear and screens stay in sync
     window.saveState?.();
     window.updateStage?.();
     window.renderList?.();
   }
-
 // ===== Realtime =====
 function subscribeRealtime() {
   console.log("[RT] Subscribing to realtime changes…");

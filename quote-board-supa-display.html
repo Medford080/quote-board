@@ -345,6 +345,7 @@ if (hasImage) {
  }
  // Apply layout (no-image centers text; otherwise left/right/alternate)
  applyLayout({ hasImage, index: state.index });
+}
 
 // Navigation + playback helpers (unchanged)
 function next(){ step(1); }
@@ -389,7 +390,8 @@ function animateSwap(){
 
     // Update image
     const imgSrc = (q.image || q.image_url || "").trim();
-    if (imgSrc) {
+    const hasImage = !!imgSrc;
+    if (hasImage) {
       el.quoteImage.src = imgSrc;
       el.quoteImageWrap.style.display = "";
     } else {
@@ -397,11 +399,15 @@ function animateSwap(){
       el.quoteImageWrap.style.display = "none";
     }
 
+    // Layout during swap as well
+    applyLayout({ hasImage, index: state.index });
+
     // Animate back in
     el.quoteBox.style.opacity = 1;
     el.quoteBox.style.transform = "translateY(0)";
   }, 150);
 }
+
    // Make sure layout reacts during slide change too
    applyLayout({ hasImage, index: state.index });
 
@@ -620,6 +626,7 @@ async function loadQuotesOnce() {
     console.error("[LOAD] Unexpected error:", e);
   }
 }
+
     // Always refresh UI so placeholders disappear and screens stay in sync
     window.saveState?.();
     window.updateStage?.();
